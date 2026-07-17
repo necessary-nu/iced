@@ -11,6 +11,30 @@ use crate::core::a11y::accesskit::{
 use crate::core::window;
 use crate::futures::futures::channel::mpsc;
 
+/// An [`accesskit_winit::Adapter`] boxed with a [`Debug`] impl, so it can
+/// travel inside the shell's event types.
+pub struct Adapter(pub Box<accesskit_winit::Adapter>);
+
+impl std::fmt::Debug for Adapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("accesskit_winit::Adapter")
+    }
+}
+
+impl std::ops::Deref for Adapter {
+    type Target = accesskit_winit::Adapter;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Adapter {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// An accessibility request forwarded from an adapter handler.
 #[derive(Debug)]
 pub enum A11yEvent {
@@ -56,6 +80,9 @@ pub struct ActivationBridge {
     pub window_node: u64,
     /// The window title, served in the placeholder tree.
     pub title: String,
+    /// The winit window, used to wake the event loop with a redraw so the
+    /// real tree is pushed promptly after activation.
+    pub raw: std::sync::Arc<winit::window::Window>,
     /// Where activation is reported.
     pub sender: mpsc::UnboundedSender<A11yEvent>,
 }
@@ -65,6 +92,7 @@ impl ActivationHandler for ActivationBridge {
         let _ = self.sender.unbounded_send(A11yEvent::Enabled {
             window: self.window,
         });
+        self.raw.request_redraw();
 
         Some(window_tree(self.window_node, &self.title))
     }
