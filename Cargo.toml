@@ -142,6 +142,7 @@ strip = "debuginfo"
 
 [workspace]
 members = [
+    "accesskit_winit",
     "beacon",
     "core",
     "debug",
