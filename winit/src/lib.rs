@@ -26,6 +26,9 @@ pub use program::graphics;
 pub use runtime::futures;
 pub use winit;
 
+#[cfg(feature = "a11y")]
+pub mod a11y;
+
 pub mod clipboard;
 pub mod conversion;
 

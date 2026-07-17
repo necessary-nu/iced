@@ -121,6 +121,20 @@ where
         }
     }
 
+    /// Returns the accessibility tree of the user interface, harvested from
+    /// the root widget after layout.
+    #[cfg(feature = "a11y")]
+    pub fn a11y_nodes(
+        &self,
+        cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        self.root.as_widget().a11y_nodes(
+            Layout::new(&self.base),
+            &self.state,
+            cursor,
+        )
+    }
+
     /// Updates the [`UserInterface`] by processing each provided [`Event`].
     ///
     /// It returns __messages__ that may have been produced as a result of user
