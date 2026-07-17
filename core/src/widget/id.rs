@@ -21,6 +21,26 @@ impl Id {
 
         Self(Internal::Unique(id))
     }
+
+    /// A stable numeric key for accessibility node identity.
+    ///
+    /// Unique ids map to their counter value (below the window node key
+    /// range starting at `u32::MAX`); custom ids hash their name with the
+    /// top bit forced, so the same name yields the same key on every view
+    /// rebuild.
+    #[cfg(feature = "a11y")]
+    pub fn a11y_key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+
+        match &self.0 {
+            Internal::Unique(id) => *id as u64,
+            Internal::Custom(name) => {
+                let mut hasher = std::hash::DefaultHasher::new();
+                name.hash(&mut hasher);
+                hasher.finish() | (1 << 63)
+            }
+        }
+    }
 }
 
 impl From<&'static str> for Id {

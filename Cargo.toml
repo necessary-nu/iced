@@ -22,6 +22,8 @@ all-features = true
 maintenance = { status = "actively-developed" }
 
 [features]
+# Enables AccessKit accessibility trees
+a11y = ["iced_core/a11y", "iced_widget/a11y", "iced_winit/a11y"]
 default = ["wgpu", "tiny-skia", "crisp", "hinting", "web-colors", "thread-pool", "linux-theme-detection", "x11", "wayland"]
 # Enables the `wgpu` GPU-accelerated renderer with all its default features (Vulkan, Metal, DX12, OpenGL, and WebGPU)
 wgpu = ["wgpu-bare", "iced_renderer/wgpu"]
@@ -194,6 +196,7 @@ iced_wgpu = { version = "0.15.0-dev", path = "wgpu", default-features = false }
 iced_widget = { version = "0.15.0-dev", path = "widget" }
 iced_winit = { version = "0.15.0-dev", path = "winit", default-features = false }
 
+accesskit = "0.24.1"
 arboard = { version = "3.6", default-features = false }
 bincode = "1.3"
 bitflags = "2.0"

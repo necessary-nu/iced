@@ -9,6 +9,8 @@
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/iced-rs/iced/9ab6923e943f784985e9ef9ca28b10278297225d/docs/logo.svg"
 )]
+#[cfg(feature = "a11y")]
+pub mod a11y;
 pub mod alignment;
 pub mod animation;
 pub mod backend;

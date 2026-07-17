@@ -14,6 +14,7 @@ keywords.workspace = true
 workspace = true
 
 [features]
+a11y = ["dep:accesskit"]
 advanced = []
 crisp = []
 image = []
@@ -21,6 +22,8 @@ basic-shaping = []
 advanced-shaping = []
 
 [dependencies]
+accesskit.workspace = true
+accesskit.optional = true
 bitflags.workspace = true
 bytes.workspace = true
 glam.workspace = true

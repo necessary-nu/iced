@@ -133,4 +133,20 @@ where
     ) -> Option<overlay::Element<'a, Message, Theme, Renderer>> {
         None
     }
+
+    /// Returns the accessibility nodes of the [`Widget`] and its children.
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        _layout: Layout<'_>,
+        _state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::a11y::A11yTree {
+        crate::a11y::A11yTree::default()
+    }
+
+    /// Returns the [`Id`] of the [`Widget`], if any.
+    fn id(&self) -> Option<Id> {
+        None
+    }
 }
