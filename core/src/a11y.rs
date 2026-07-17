@@ -56,6 +56,16 @@ impl From<A11yId> for accesskit::NodeId {
     }
 }
 
+/// Converts widget-space [`Rectangle`] bounds to AccessKit [`Rect`] bounds.
+pub fn bounds(bounds: crate::Rectangle) -> accesskit::Rect {
+    accesskit::Rect::new(
+        f64::from(bounds.x),
+        f64::from(bounds.y),
+        f64::from(bounds.x + bounds.width),
+        f64::from(bounds.y + bounds.height),
+    )
+}
+
 static NEXT_WINDOW_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Allocates a window node key that cannot collide with widget keys for the

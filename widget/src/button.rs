@@ -81,6 +81,8 @@ where
     clip: bool,
     class: Theme::Class<'a>,
     status: Option<Status>,
+    #[cfg(feature = "a11y")]
+    id: crate::core::widget::Id,
 }
 
 enum OnPress<'a, Message> {
@@ -115,6 +117,8 @@ where
             clip: false,
             class: Theme::default(),
             status: None,
+            #[cfg(feature = "a11y")]
+            id: crate::core::widget::Id::unique(),
         }
     }
 
@@ -423,6 +427,45 @@ where
             viewport,
             translation,
         )
+    }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        state: &Tree,
+        cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yNode, A11yTree,
+            accesskit::{Action, Node, Role},
+        };
+
+        let child_layout = layout.children().next().unwrap();
+        let child_tree = self.content.as_widget().a11y_nodes(
+            child_layout,
+            &state.children[0],
+            cursor,
+        );
+
+        let mut node = Node::new(Role::Button);
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+        node.add_action(Action::Focus);
+        if self.on_press.is_some() {
+            node.add_action(Action::Click);
+        } else {
+            node.set_disabled();
+        }
+
+        A11yTree::node_with_child_tree(
+            A11yNode::new(node, self.id.clone()),
+            child_tree,
+        )
+    }
+
+    #[cfg(feature = "a11y")]
+    fn id(&self) -> Option<crate::core::widget::Id> {
+        Some(self.id.clone())
     }
 }
 

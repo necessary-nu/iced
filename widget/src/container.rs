@@ -367,6 +367,20 @@ where
             translation,
         )
     }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        state: &Tree,
+        cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        self.content.as_widget().a11y_nodes(
+            layout.children().next().unwrap(),
+            state,
+            cursor,
+        )
+    }
 }
 
 impl<'a, Message, Theme, Renderer> From<Container<'a, Message, Theme, Renderer>>

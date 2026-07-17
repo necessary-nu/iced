@@ -259,6 +259,26 @@ where
     ) {
         operation.text(None, layout.bounds(), &self.fragment);
     }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        _state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::a11y::A11yTree {
+        use crate::a11y::accesskit::{Node, Role};
+
+        if self.fragment.is_empty() {
+            return crate::a11y::A11yTree::default();
+        }
+
+        let mut node = Node::new(Role::Label);
+        node.set_value(self.fragment.to_string());
+        node.set_bounds(crate::a11y::bounds(layout.bounds()));
+
+        crate::a11y::A11yTree::leaf(node, crate::widget::Id::unique())
+    }
 }
 
 /// The format of some [`Text`].
