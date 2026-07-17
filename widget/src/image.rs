@@ -390,6 +390,24 @@ where
             self.scale,
         );
     }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        _state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yTree,
+            accesskit::{Node, Role},
+        };
+
+        let mut node = Node::new(Role::Image);
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+
+        A11yTree::leaf(node, crate::core::widget::Id::unique())
+    }
 }
 
 impl<'a, Message, Theme, Renderer, Handle> From<Image<Handle>>

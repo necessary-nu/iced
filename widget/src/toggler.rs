@@ -472,6 +472,38 @@ where
             style.foreground,
         );
     }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        _state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yTree,
+            accesskit::{Action, Node, Role, Toggled},
+        };
+
+        let mut node = Node::new(Role::Switch);
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+        node.add_action(Action::Focus);
+        if self.on_toggle.is_some() {
+            node.add_action(Action::Click);
+        } else {
+            node.set_disabled();
+        }
+        node.set_toggled(if self.is_toggled {
+            Toggled::True
+        } else {
+            Toggled::False
+        });
+        if let Some(label) = self.label.as_deref() {
+            node.set_label(label.to_string());
+        }
+
+        A11yTree::leaf(node, crate::core::widget::Id::unique())
+    }
 }
 
 impl<'a, Message, Theme, Renderer> From<Toggler<'a, Message, Theme, Renderer>>

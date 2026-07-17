@@ -527,6 +527,30 @@ where
             mouse::Interaction::default()
         }
     }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        _state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yTree,
+            accesskit::{Action, Node, Role},
+        };
+
+        let mut node = Node::new(Role::Slider);
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+        node.add_action(Action::Focus);
+        node.add_action(Action::SetValue);
+        node.set_numeric_value(self.value.as_());
+        node.set_min_numeric_value(self.range.start().as_());
+        node.set_max_numeric_value(self.range.end().as_());
+        node.set_numeric_value_step(self.step);
+
+        A11yTree::leaf(node, crate::core::widget::Id::unique())
+    }
 }
 
 impl<'a, T, Message, Theme, Renderer> From<Slider<'a, T, Message, Theme>>

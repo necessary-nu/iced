@@ -1318,6 +1318,45 @@ where
             mouse::Interaction::default()
         }
     }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        _state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yTree,
+            accesskit::{Action, Node, Role},
+        };
+
+        let mut node = Node::new(if self.is_secure {
+            Role::PasswordInput
+        } else {
+            Role::TextInput
+        });
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+        node.add_action(Action::Focus);
+        if self.on_input.is_none() {
+            node.set_read_only();
+        }
+        if !self.value.is_empty() {
+            node.set_value(self.value.to_string());
+        } else if !self.placeholder.is_empty() {
+            node.set_placeholder(self.placeholder.clone());
+        }
+
+        A11yTree::leaf(
+            node,
+            self.id.clone().unwrap_or_else(crate::core::widget::Id::unique),
+        )
+    }
+
+    #[cfg(feature = "a11y")]
+    fn id(&self) -> Option<crate::core::widget::Id> {
+        self.id.clone()
+    }
 }
 
 impl<'a, Message, Theme, Renderer> From<TextInput<'a, Message, Theme, Renderer>>
