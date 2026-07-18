@@ -553,7 +553,10 @@ async fn run_instance<P>(
     let mut ui_caches = FxHashMap::default();
     let mut user_interfaces = ManuallyDrop::new(FxHashMap::default());
     #[cfg(feature = "a11y")]
-    let mut a11y_windows: FxHashMap<window::Id, (crate::a11y::Adapter, u64)> = FxHashMap::default();
+    let mut a11y_windows: FxHashMap<
+        window::Id,
+        (crate::a11y::Adapter, crate::a11y::FocusState),
+    > = FxHashMap::default();
     #[cfg(feature = "a11y")]
     let mut a11y_actions: FxHashMap<
         window::Id,
@@ -620,7 +623,8 @@ async fn run_instance<P>(
                 window_node,
             } => {
                 #[cfg(feature = "a11y")]
-                let _ = a11y_windows.insert(id, (adapter, window_node));
+                let _ =
+                    a11y_windows.insert(id, (adapter, crate::a11y::FocusState::new(window_node)));
                 if compositor.is_none() {
                     let (compositor_sender, compositor_receiver) = oneshot::channel();
 
@@ -853,6 +857,9 @@ async fn run_instance<P>(
                         while let Ok(event) = a11y_receiver.try_recv() {
                             match event {
                                 A11yEvent::Action { window, request } => {
+                                    if let Some((_, focus)) = a11y_windows.get_mut(&window) {
+                                        focus.handle_action(request.action, request.target_node);
+                                    }
                                     a11y_actions.entry(window).or_default().push(request);
                                 }
                                 A11yEvent::Enabled { .. } | A11yEvent::Disabled { .. } => {}
@@ -1000,7 +1007,7 @@ async fn run_instance<P>(
 
                         #[cfg(feature = "a11y")]
                         {
-                            if let Some((adapter, window_node)) = a11y_windows.get_mut(&id) {
+                            if let Some((adapter, focus)) = a11y_windows.get_mut(&id) {
                                 adapter.update_if_active(|| {
                                     use crate::core::a11y::accesskit::{
                                         Node, NodeId, Role, Tree, TreeId, TreeUpdate,
@@ -1012,17 +1019,19 @@ async fn run_instance<P>(
                                     let mut window_root = Node::new(Role::Window);
                                     window_root.set_label(window.raw.title());
 
-                                    let root = NodeId(*window_node);
+                                    let root = NodeId(focus.window_node());
                                     let tree = A11yTree::node_with_child_tree(
-                                        A11yNode::new(window_root, *window_node),
+                                        A11yNode::new(window_root, focus.window_node()),
                                         child_tree,
                                     );
+                                    let nodes: Vec<_> = tree.into();
+                                    let focused = focus.resolve(&nodes);
 
                                     TreeUpdate {
-                                        nodes: tree.into(),
+                                        nodes,
                                         tree: Some(Tree::new(root)),
                                         tree_id: TreeId::ROOT,
-                                        focus: root,
+                                        focus: focused,
                                     }
                                 });
                             }

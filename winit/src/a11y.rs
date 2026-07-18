@@ -5,8 +5,8 @@
 //! `run_instance`, which owns the user interfaces the accessibility trees
 //! are harvested from.
 use crate::core::a11y::accesskit::{
-    ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId, Role, Tree, TreeId,
-    TreeUpdate,
+    Action, ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId, Role, Tree,
+    TreeId, TreeUpdate,
 };
 use crate::core::window;
 use crate::futures::futures::channel::mpsc;
@@ -14,6 +14,49 @@ use crate::futures::futures::channel::mpsc;
 /// An [`accesskit_winit::Adapter`] boxed with a [`Debug`] impl, so it can
 /// travel inside the shell's event types.
 pub struct Adapter(pub Box<accesskit_winit::Adapter>);
+
+/// The AccessKit focus reported for one window. Focus requests update this
+/// state before the next tree push; if the focused widget disappears during a
+/// rebuild, [`Self::resolve`] falls back to the window root so every
+/// `TreeUpdate` references a node that is actually present.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FocusState {
+    window_node: u64,
+    current: NodeId,
+}
+
+impl FocusState {
+    /// Starts with the window itself focused, matching the activation tree.
+    pub(crate) fn new(window_node: u64) -> Self {
+        Self {
+            window_node,
+            current: NodeId(window_node),
+        }
+    }
+
+    /// The numeric window node used by iced's accessibility tree wrapper.
+    pub(crate) fn window_node(self) -> u64 {
+        self.window_node
+    }
+
+    /// Applies the focus effect of an AccessKit action request.
+    pub(crate) fn handle_action(&mut self, action: Action, target: NodeId) {
+        match action {
+            Action::Focus => self.current = target,
+            Action::Blur if self.current == target => self.current = NodeId(self.window_node),
+            _ => {}
+        }
+    }
+
+    /// Returns a valid focus for `nodes`, resetting stale widget focus to the
+    /// window root after conditional content or a whole UI rebuild removes it.
+    pub(crate) fn resolve(&mut self, nodes: &[(NodeId, Node)]) -> NodeId {
+        if !nodes.iter().any(|(id, _)| *id == self.current) {
+            self.current = NodeId(self.window_node);
+        }
+        self.current
+    }
+}
 
 impl std::fmt::Debug for Adapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -132,5 +175,31 @@ impl DeactivationHandler for DeactivationBridge {
         let _ = self.sender.unbounded_send(A11yEvent::Disabled {
             window: self.window,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focus_requests_survive_tree_updates_and_stale_focus_falls_back() {
+        let root = NodeId(10);
+        let control = NodeId(20);
+        let mut focus = FocusState::new(10);
+        let nodes = vec![
+            (root, Node::new(Role::Window)),
+            (control, Node::new(Role::Button)),
+        ];
+
+        focus.handle_action(Action::Focus, control);
+        assert_eq!(focus.resolve(&nodes), control);
+
+        focus.handle_action(Action::Blur, control);
+        assert_eq!(focus.resolve(&nodes), root);
+
+        focus.handle_action(Action::Focus, control);
+        let root_only = vec![(root, Node::new(Role::Window))];
+        assert_eq!(focus.resolve(&root_only), root);
     }
 }
