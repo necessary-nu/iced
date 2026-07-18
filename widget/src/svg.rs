@@ -64,6 +64,7 @@ where
     rotation: Rotation,
     opacity: f32,
     status: Option<Status>,
+    alt_text: Option<String>,
 }
 
 impl<'a, Theme> Svg<'a, Theme>
@@ -81,7 +82,17 @@ where
             rotation: Rotation::default(),
             opacity: 1.0,
             status: None,
+            alt_text: None,
         }
+    }
+
+    /// Sets alternative text for the [`Svg`].
+    ///
+    /// SVGs without alternative text are treated as decorative and omitted
+    /// from the accessibility tree.
+    pub fn alt_text(mut self, alt_text: impl Into<String>) -> Self {
+        self.alt_text = Some(alt_text.into());
+        self
     }
 
     /// Creates a new [`Svg`] that will display the contents of the file at the
@@ -273,7 +284,7 @@ where
     fn a11y_nodes(
         &self,
         layout: Layout<'_>,
-        _state: &Tree,
+        state: &Tree,
         _cursor: mouse::Cursor,
     ) -> crate::core::a11y::A11yTree {
         use crate::core::a11y::{
@@ -281,10 +292,15 @@ where
             accesskit::{Node, Role},
         };
 
+        let Some(alt_text) = self.alt_text.as_ref() else {
+            return A11yTree::default();
+        };
+
         let mut node = Node::new(Role::Image);
+        node.set_label(alt_text.clone());
         node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
 
-        A11yTree::leaf(node, crate::core::widget::Id::unique())
+        A11yTree::leaf(node, state.a11y_id().clone())
     }
 }
 

@@ -664,6 +664,60 @@ where
         };
 
         match &event {
+            #[cfg(feature = "a11y")]
+            Event::Accessibility(request) => {
+                use crate::core::a11y::{
+                    accesskit::{Action, ActionData},
+                    request_targets,
+                };
+
+                let id = self.id.as_ref().unwrap_or_else(|| tree.a11y_id()).clone();
+                if request_targets(request, &id) {
+                    let state = state::<Renderer>(tree);
+
+                    match request.action {
+                        Action::Focus if self.on_input.is_some() => {
+                            state.focus();
+                            shell.request_redraw();
+                            shell.capture_event();
+                        }
+                        Action::Blur if self.on_input.is_some() => {
+                            state.unfocus();
+                            shell.request_redraw();
+                            shell.capture_event();
+                        }
+                        Action::SetValue if self.on_input.is_some() => {
+                            if let Some(ActionData::Value(value)) = request.data.as_ref() {
+                                let value = Value::new(value);
+                                state.cursor.move_to(value.len());
+                                state.focus();
+                                shell.publish((self.on_input.as_ref().unwrap())(value.to_string()));
+                                shell.capture_event();
+                            }
+                        }
+                        Action::ReplaceSelectedText if self.on_input.is_some() => {
+                            if let Some(ActionData::Value(replacement)) = request.data.as_ref() {
+                                let mut value = self.value.clone();
+                                let (start, end) =
+                                    state.cursor.selection(&value).unwrap_or_else(|| {
+                                        let index = state.cursor.start(&value);
+                                        (index, index)
+                                    });
+                                let replacement = Value::new(replacement);
+                                let replacement_len = replacement.len();
+
+                                value.remove_many(start, end);
+                                value.insert_many(start, replacement);
+                                state.cursor.move_to(start + replacement_len);
+                                state.focus();
+                                shell.publish((self.on_input.as_ref().unwrap())(value.to_string()));
+                                shell.capture_event();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 let state = state::<Renderer>(tree);
@@ -1323,7 +1377,7 @@ where
     fn a11y_nodes(
         &self,
         layout: Layout<'_>,
-        _state: &Tree,
+        state: &Tree,
         _cursor: mouse::Cursor,
     ) -> crate::core::a11y::A11yTree {
         use crate::core::a11y::{
@@ -1337,22 +1391,27 @@ where
             Role::TextInput
         });
         node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
-        node.add_action(Action::Focus);
         if self.on_input.is_none() {
-            node.set_read_only();
+            node.set_disabled();
+        } else {
+            node.add_action(Action::Focus);
+            node.add_action(Action::Blur);
+            node.add_action(Action::SetValue);
+            node.add_action(Action::ReplaceSelectedText);
         }
         if !self.value.is_empty() {
-            node.set_value(self.value.to_string());
+            node.set_value(if self.is_secure {
+                self.value.secure().to_string()
+            } else {
+                self.value.to_string()
+            });
         } else if !self.placeholder.is_empty() {
             node.set_placeholder(self.placeholder.clone());
         }
 
-        A11yTree::leaf(
-            node,
-            self.id
-                .clone()
-                .unwrap_or_else(crate::core::widget::Id::unique),
-        )
+        let id = self.id.as_ref().unwrap_or_else(|| state.a11y_id()).clone();
+
+        A11yTree::leaf(node, id)
     }
 
     #[cfg(feature = "a11y")]

@@ -18,6 +18,14 @@ pub struct Tree {
 
     /// The children of the root widget of the [`Tree`].
     pub children: Vec<Tree>,
+
+    /// The stable accessibility identity associated with this widget state.
+    ///
+    /// Unlike widget values, a [`Tree`] survives view reconstruction while its
+    /// widget tag remains the same. Keeping the generated identity here makes
+    /// default accessibility node ids stable across rebuilds.
+    #[cfg(feature = "a11y")]
+    pub a11y_id: super::Id,
 }
 
 impl Tree {
@@ -27,6 +35,8 @@ impl Tree {
             tag: Tag::stateless(),
             state: State::None,
             children: Vec::new(),
+            #[cfg(feature = "a11y")]
+            a11y_id: super::Id::unique(),
         }
     }
 
@@ -43,7 +53,15 @@ impl Tree {
             tag: widget.tag(),
             state: widget.state(),
             children: Vec::new(),
+            #[cfg(feature = "a11y")]
+            a11y_id: super::Id::unique(),
         }
+    }
+
+    /// Returns the stable default accessibility identity of this widget.
+    #[cfg(feature = "a11y")]
+    pub fn a11y_id(&self) -> &super::Id {
+        &self.a11y_id
     }
 
     /// Reconciles the current tree with the provided [`Widget`].

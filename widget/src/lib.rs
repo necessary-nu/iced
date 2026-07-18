@@ -152,3 +152,6 @@ pub mod markdown;
 pub use crate::core::theme::{self, Theme};
 pub use action::Action;
 pub use renderer::Renderer;
+
+#[cfg(all(test, feature = "a11y"))]
+mod a11y_tests;

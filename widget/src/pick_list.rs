@@ -152,6 +152,7 @@ where
     Theme: Catalog,
     Renderer: text::Renderer,
 {
+    id: Option<crate::core::widget::Id>,
     options: L,
     to_string: Box<dyn Fn(&T) -> String + 'a>,
     on_select: Option<Box<dyn Fn(T) -> Message + 'a>>,
@@ -186,6 +187,7 @@ where
     /// selected value, and the message to produce when an option is selected.
     pub fn new(selected: Option<V>, options: L, to_string: impl Fn(&T) -> String + 'a) -> Self {
         Self {
+            id: None,
             to_string: Box::new(to_string),
             on_select: None,
             on_open: None,
@@ -206,6 +208,12 @@ where
             last_status: None,
             menu_height: Length::Shrink,
         }
+    }
+
+    /// Sets the [`crate::core::widget::Id`] of the [`PickList`].
+    pub fn id(mut self, id: impl Into<crate::core::widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Sets the placeholder of the [`PickList`].
@@ -437,9 +445,99 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        #[cfg(feature = "a11y")]
+        let a11y_id = self.id.as_ref().unwrap_or_else(|| tree.a11y_id()).clone();
         let state = tree.state.downcast_mut::<State<Renderer::Paragraph>>();
 
         match event {
+            #[cfg(feature = "a11y")]
+            Event::Accessibility(request)
+                if crate::core::a11y::request_targets(request, &a11y_id) =>
+            {
+                use crate::core::a11y::accesskit::{Action, ActionData};
+
+                let enabled = self.on_select.is_some();
+                match request.action {
+                    Action::Focus | Action::Blur if enabled => {
+                        shell.capture_event();
+                    }
+                    Action::Click if enabled => {
+                        state.is_open = !state.is_open;
+                        if state.is_open {
+                            let selected = self.selected.as_ref().map(Borrow::borrow);
+                            state.hovered_option = self
+                                .options
+                                .borrow()
+                                .iter()
+                                .position(|option| Some(option) == selected);
+                            if let Some(on_open) = &self.on_open {
+                                shell.publish(on_open.clone());
+                            }
+                        } else if let Some(on_close) = &self.on_close {
+                            shell.publish(on_close.clone());
+                        }
+                        shell.capture_event();
+                    }
+                    Action::Expand if enabled && !state.is_open => {
+                        let selected = self.selected.as_ref().map(Borrow::borrow);
+                        state.is_open = true;
+                        state.hovered_option = self
+                            .options
+                            .borrow()
+                            .iter()
+                            .position(|option| Some(option) == selected);
+                        if let Some(on_open) = &self.on_open {
+                            shell.publish(on_open.clone());
+                        }
+                        shell.capture_event();
+                    }
+                    Action::Collapse if enabled && state.is_open => {
+                        state.is_open = false;
+                        if let Some(on_close) = &self.on_close {
+                            shell.publish(on_close.clone());
+                        }
+                        shell.capture_event();
+                    }
+                    Action::SetValue if enabled => {
+                        if let Some(ActionData::Value(value)) = request.data.as_ref()
+                            && let Some(option) = self
+                                .options
+                                .borrow()
+                                .iter()
+                                .find(|option| (self.to_string)(option) == value.as_ref())
+                                .cloned()
+                        {
+                            shell.publish((self.on_select.as_ref().unwrap())(option));
+                            state.is_open = false;
+                            shell.capture_event();
+                        }
+                    }
+                    Action::Increment | Action::Decrement if enabled => {
+                        let options = self.options.borrow();
+                        let selected = self.selected.as_ref().map(Borrow::borrow);
+                        let selected_index = selected.and_then(|selected| {
+                            options.iter().position(|option| option == selected)
+                        });
+                        let next_index = match request.action {
+                            Action::Increment => selected_index
+                                .map_or(0, |index| index.saturating_add(1))
+                                .min(options.len().saturating_sub(1)),
+                            Action::Decrement => selected_index.map_or_else(
+                                || options.len().saturating_sub(1),
+                                |index| index.saturating_sub(1),
+                            ),
+                            _ => unreachable!(),
+                        };
+
+                        if let Some(option) = options.get(next_index).cloned() {
+                            shell.publish((self.on_select.as_ref().unwrap())(option));
+                            state.is_open = false;
+                            shell.capture_event();
+                        }
+                    }
+                    _ => {}
+                }
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
                 if state.is_open {
@@ -744,6 +842,56 @@ where
         } else {
             None
         }
+    }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yTree,
+            accesskit::{Action, Node, Orientation, Role},
+        };
+
+        let widget_state = state.state.downcast_ref::<State<Renderer::Paragraph>>();
+        let mut node = Node::new(Role::ComboBox);
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+        node.set_orientation(Orientation::Vertical);
+        node.set_expanded(widget_state.is_open);
+
+        if let Some(selected) = self.selected.as_ref().map(Borrow::borrow) {
+            node.set_value((self.to_string)(selected));
+        } else if let Some(placeholder) = self.placeholder.as_ref() {
+            node.set_placeholder(placeholder.clone());
+        }
+
+        if self.on_select.is_some() {
+            node.add_action(Action::Focus);
+            node.add_action(Action::Blur);
+            node.add_action(Action::Click);
+            node.add_action(if widget_state.is_open {
+                Action::Collapse
+            } else {
+                Action::Expand
+            });
+            node.add_action(Action::SetValue);
+            node.add_action(Action::Increment);
+            node.add_action(Action::Decrement);
+        } else {
+            node.set_disabled();
+        }
+
+        let id = self.id.as_ref().unwrap_or_else(|| state.a11y_id()).clone();
+
+        A11yTree::leaf(node, id)
+    }
+
+    #[cfg(feature = "a11y")]
+    fn id(&self) -> Option<crate::core::widget::Id> {
+        self.id.clone()
     }
 }
 

@@ -551,6 +551,8 @@ where
         const AUTOSCROLL_DEADZONE: f32 = 20.0;
         const AUTOSCROLL_SMOOTHNESS: f32 = 1.5;
 
+        #[cfg(feature = "a11y")]
+        let a11y_id = self.id.as_ref().unwrap_or_else(|| tree.a11y_id()).clone();
         let state = tree.state.downcast_mut::<State>();
         let bounds = layout.bounds();
         let cursor_over_scrollable = cursor.position_over(bounds);
@@ -759,6 +761,58 @@ where
                     *cursor -= translation;
                 }
             };
+
+            #[cfg(feature = "a11y")]
+            if let Event::Accessibility(request) = event
+                && crate::core::a11y::request_targets(request, &a11y_id)
+            {
+                use crate::core::a11y::accesskit::{Action, ActionData, ScrollUnit};
+
+                let current = state.translation(self.direction, bounds, content_bounds);
+                let mut target = current;
+                let unit = match request.data.as_ref() {
+                    Some(ActionData::ScrollUnit(ScrollUnit::Item)) => 60.0,
+                    Some(ActionData::ScrollUnit(ScrollUnit::Page)) | None => match request.action {
+                        Action::ScrollLeft | Action::ScrollRight => bounds.width,
+                        _ => bounds.height,
+                    },
+                    _ => 0.0,
+                };
+
+                let handled = match request.action {
+                    Action::ScrollUp => {
+                        target.y -= unit;
+                        true
+                    }
+                    Action::ScrollDown => {
+                        target.y += unit;
+                        true
+                    }
+                    Action::ScrollLeft => {
+                        target.x -= unit;
+                        true
+                    }
+                    Action::ScrollRight => {
+                        target.x += unit;
+                        true
+                    }
+                    Action::SetScrollOffset => {
+                        if let Some(ActionData::SetScrollOffset(point)) = request.data.as_ref() {
+                            target = Vector::new(point.x as f32, point.y as f32);
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                };
+
+                if handled {
+                    state.set_translation(self.direction, target, bounds, content_bounds);
+                    let _ = notify_scroll(state, &self.on_scroll, bounds, content_bounds, shell);
+                    shell.capture_event();
+                }
+            }
 
             if matches!(
                 event,
@@ -1274,11 +1328,68 @@ where
         state: &Tree,
         cursor: mouse::Cursor,
     ) -> crate::core::a11y::A11yTree {
-        self.content.as_widget().a11y_nodes(
-            layout.children().next().unwrap(),
+        use crate::core::a11y::{
+            A11yNode, A11yTree,
+            accesskit::{Action, Affine, Node, Orientation, Role},
+        };
+
+        let widget_state = state.state.downcast_ref::<State>();
+        let content_layout = layout.children().next().unwrap();
+        let bounds = layout.bounds();
+        let content_bounds = content_layout.bounds();
+        let translation = widget_state.translation(self.direction, bounds, content_bounds);
+        let max_x = (content_bounds.width - bounds.width).max(0.0);
+        let max_y = (content_bounds.height - bounds.height).max(0.0);
+        let mut child_tree = self.content.as_widget().a11y_nodes(
+            content_layout,
             &state.children[0],
-            cursor,
-        )
+            cursor + translation,
+        );
+
+        if max_x <= 0.0 && max_y <= 0.0 {
+            return child_tree;
+        }
+
+        child_tree.transform_roots(Affine::translate((
+            -f64::from(translation.x),
+            -f64::from(translation.y),
+        )));
+
+        let mut node = Node::new(Role::ScrollView);
+        node.set_bounds(crate::core::a11y::bounds(bounds));
+        node.set_clips_children();
+        node.add_action(Action::SetScrollOffset);
+
+        if max_x > 0.0 {
+            node.set_scroll_x(f64::from(translation.x));
+            node.set_scroll_x_min(0.0);
+            node.set_scroll_x_max(f64::from(max_x));
+            node.add_action(Action::ScrollLeft);
+            node.add_action(Action::ScrollRight);
+        }
+
+        if max_y > 0.0 {
+            node.set_scroll_y(f64::from(translation.y));
+            node.set_scroll_y_min(0.0);
+            node.set_scroll_y_max(f64::from(max_y));
+            node.add_action(Action::ScrollUp);
+            node.add_action(Action::ScrollDown);
+        }
+
+        if max_x > 0.0 && max_y <= 0.0 {
+            node.set_orientation(Orientation::Horizontal);
+        } else if max_y > 0.0 && max_x <= 0.0 {
+            node.set_orientation(Orientation::Vertical);
+        }
+
+        let id = self.id.as_ref().unwrap_or_else(|| state.a11y_id()).clone();
+
+        A11yTree::node_with_child_tree(A11yNode::new(node, id), child_tree)
+    }
+
+    #[cfg(feature = "a11y")]
+    fn id(&self) -> Option<widget::Id> {
+        self.id.clone()
     }
 }
 
@@ -1684,6 +1795,34 @@ impl State {
 
         if let Some(y) = offset.y {
             self.offset_y = Offset::Absolute(y.max(0.0));
+        }
+    }
+
+    /// Sets the visual scroll translation, accounting for end-anchored axes.
+    #[cfg(feature = "a11y")]
+    fn set_translation(
+        &mut self,
+        direction: Direction,
+        translation: Vector,
+        bounds: Rectangle,
+        content_bounds: Rectangle,
+    ) {
+        if let Some(horizontal) = direction.horizontal() {
+            let max = (content_bounds.width - bounds.width).max(0.0);
+            let translation = translation.x.clamp(0.0, max);
+            self.offset_x = Offset::Absolute(match horizontal.alignment {
+                Anchor::Start => translation,
+                Anchor::End => max - translation,
+            });
+        }
+
+        if let Some(vertical) = direction.vertical() {
+            let max = (content_bounds.height - bounds.height).max(0.0);
+            let translation = translation.y.clamp(0.0, max);
+            self.offset_y = Offset::Absolute(match vertical.alignment {
+                Anchor::Start => translation,
+                Anchor::End => max - translation,
+            });
         }
     }
 

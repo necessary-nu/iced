@@ -264,7 +264,7 @@ where
     fn a11y_nodes(
         &self,
         layout: Layout<'_>,
-        _state: &Tree,
+        state: &Tree,
         _cursor: mouse::Cursor,
     ) -> crate::a11y::A11yTree {
         use crate::a11y::accesskit::{Node, Role};
@@ -277,7 +277,7 @@ where
         node.set_value(self.fragment.to_string());
         node.set_bounds(crate::a11y::bounds(layout.bounds()));
 
-        crate::a11y::A11yTree::leaf(node, crate::widget::Id::unique())
+        crate::a11y::A11yTree::leaf(node, state.a11y_id().clone())
     }
 }
 

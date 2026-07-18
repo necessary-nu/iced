@@ -88,6 +88,7 @@ pub struct Slider<'a, T, Message, Theme = crate::Theme>
 where
     Theme: Catalog,
 {
+    id: Option<core::widget::Id>,
     range: RangeInclusive<T>,
     step: f64,
     shift_step: Option<f64>,
@@ -135,6 +136,7 @@ where
         };
 
         Slider {
+            id: None,
             value,
             default: None,
             range,
@@ -147,6 +149,12 @@ where
             class: Theme::default(),
             status: None,
         }
+    }
+
+    /// Sets the [`core::widget::Id`] of the [`Slider`].
+    pub fn id(mut self, id: impl Into<core::widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Sets the optional default value for the [`Slider`].
@@ -254,6 +262,8 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        #[cfg(feature = "a11y")]
+        let a11y_id = self.id.as_ref().unwrap_or_else(|| tree.a11y_id()).clone();
         let state = tree.state.downcast_mut::<State>();
 
         let mut update = || {
@@ -319,7 +329,8 @@ where
                 T::from_f64(new_value)
             };
 
-            let change = |new_value: T| {
+            #[cfg_attr(not(feature = "a11y"), allow(unused_mut))]
+            let mut change = |new_value: T| {
                 if (self.value.as_() - new_value.as_()).abs() > f64::EPSILON {
                     shell.publish((self.on_change)(new_value));
 
@@ -328,6 +339,51 @@ where
             };
 
             match &event {
+                #[cfg(feature = "a11y")]
+                Event::Accessibility(request)
+                    if crate::core::a11y::request_targets(request, &a11y_id) =>
+                {
+                    use crate::core::a11y::accesskit::{Action, ActionData};
+
+                    match request.action {
+                        Action::Focus | Action::Blur => {
+                            shell.capture_event();
+                        }
+                        Action::Increment => {
+                            let _ = increment(current_value).map(change);
+                            shell.capture_event();
+                        }
+                        Action::Decrement => {
+                            let _ = decrement(current_value).map(change);
+                            shell.capture_event();
+                        }
+                        Action::SetValue => {
+                            let requested = match request.data.as_ref() {
+                                Some(ActionData::NumericValue(value)) => Some(*value),
+                                Some(ActionData::Value(value)) => value.parse::<f64>().ok(),
+                                _ => None,
+                            };
+
+                            if let Some(requested) = requested {
+                                let start = (*self.range.start()).as_();
+                                let end = (*self.range.end()).as_();
+                                let clamped = requested.clamp(start, end);
+                                let snapped = if self.step > 0.0 {
+                                    start + ((clamped - start) / self.step).round() * self.step
+                                } else {
+                                    clamped
+                                }
+                                .clamp(start, end);
+
+                                if let Some(value) = T::from_f64(snapped) {
+                                    change(value);
+                                    shell.capture_event();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
                 | Event::Touch(touch::Event::FingerPressed { .. }) => {
                     if let Some(cursor_position) = cursor.position_over(layout.bounds()) {
@@ -532,24 +588,35 @@ where
     fn a11y_nodes(
         &self,
         layout: Layout<'_>,
-        _state: &Tree,
+        state: &Tree,
         _cursor: mouse::Cursor,
     ) -> crate::core::a11y::A11yTree {
         use crate::core::a11y::{
             A11yTree,
-            accesskit::{Action, Node, Role},
+            accesskit::{Action, Node, Orientation, Role},
         };
 
         let mut node = Node::new(Role::Slider);
         node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
         node.add_action(Action::Focus);
+        node.add_action(Action::Blur);
         node.add_action(Action::SetValue);
+        node.add_action(Action::Increment);
+        node.add_action(Action::Decrement);
+        node.set_orientation(Orientation::Horizontal);
         node.set_numeric_value(self.value.as_());
         node.set_min_numeric_value(self.range.start().as_());
         node.set_max_numeric_value(self.range.end().as_());
         node.set_numeric_value_step(self.step);
 
-        A11yTree::leaf(node, crate::core::widget::Id::unique())
+        let id = self.id.as_ref().unwrap_or_else(|| state.a11y_id()).clone();
+
+        A11yTree::leaf(node, id)
+    }
+
+    #[cfg(feature = "a11y")]
+    fn id(&self) -> Option<core::widget::Id> {
+        self.id.clone()
     }
 }
 

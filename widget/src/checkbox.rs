@@ -84,6 +84,7 @@ where
     Renderer: text::Renderer,
     Theme: Catalog,
 {
+    id: Option<widget::Id>,
     is_checked: bool,
     on_toggle: Option<Box<dyn Fn(bool) -> Message + 'a>>,
     label: Option<text::Fragment<'a>>,
@@ -114,6 +115,7 @@ where
     ///   * a boolean describing whether the [`Checkbox`] is checked or not
     pub fn new(is_checked: bool) -> Self {
         Checkbox {
+            id: None,
             is_checked,
             on_toggle: None,
             label: None,
@@ -135,6 +137,12 @@ where
             class: Theme::default(),
             last_status: None,
         }
+    }
+
+    /// Sets the [`widget::Id`] of the [`Checkbox`].
+    pub fn id(mut self, id: impl Into<widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Sets the label of the [`Checkbox`].
@@ -319,6 +327,31 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        #[cfg(feature = "a11y")]
+        if let Event::Accessibility(request) = event {
+            use crate::core::a11y::{accesskit::Action, request_targets};
+
+            let id = self.id.as_ref().unwrap_or_else(|| _tree.a11y_id());
+            if request_targets(request, id) {
+                match request.action {
+                    Action::Click => {
+                        if let Some(on_toggle) = &self.on_toggle {
+                            shell.publish((on_toggle)(!self.is_checked));
+                            shell.capture_event();
+                        }
+                    }
+                    Action::Focus | Action::Blur if self.on_toggle.is_some() => {
+                        shell.capture_event();
+                    }
+                    _ => {}
+                }
+
+                if shell.is_event_captured() {
+                    return;
+                }
+            }
+        }
+
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
@@ -471,7 +504,7 @@ where
     fn a11y_nodes(
         &self,
         layout: Layout<'_>,
-        _state: &Tree,
+        state: &Tree,
         _cursor: mouse::Cursor,
     ) -> crate::core::a11y::A11yTree {
         use crate::core::a11y::{
@@ -481,8 +514,9 @@ where
 
         let mut node = Node::new(Role::CheckBox);
         node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
-        node.add_action(Action::Focus);
         if self.on_toggle.is_some() {
+            node.add_action(Action::Focus);
+            node.add_action(Action::Blur);
             node.add_action(Action::Click);
         } else {
             node.set_disabled();
@@ -496,7 +530,14 @@ where
             node.set_label(label.to_string());
         }
 
-        A11yTree::leaf(node, crate::core::widget::Id::unique())
+        let id = self.id.as_ref().unwrap_or_else(|| state.a11y_id()).clone();
+
+        A11yTree::leaf(node, id)
+    }
+
+    #[cfg(feature = "a11y")]
+    fn id(&self) -> Option<widget::Id> {
+        self.id.clone()
     }
 }
 

@@ -434,6 +434,39 @@ where
             mouse::Interaction::None
         }
     }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        state: &Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yTree,
+            accesskit::{Node, Role},
+        };
+
+        let value = self
+            .spans
+            .as_ref()
+            .as_ref()
+            .iter()
+            .fold(String::new(), |mut value, span| {
+                value.push_str(&span.text);
+                value
+            });
+
+        if value.is_empty() {
+            return A11yTree::default();
+        }
+
+        let mut node = Node::new(Role::Label);
+        node.set_value(value);
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+
+        A11yTree::leaf(node, state.a11y_id().clone())
+    }
 }
 
 fn layout<Link, Renderer>(

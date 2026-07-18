@@ -66,6 +66,16 @@ pub fn bounds(bounds: crate::Rectangle) -> accesskit::Rect {
     )
 }
 
+/// Returns the AccessKit node id for an iced widget id.
+pub fn node_id(id: &Id) -> accesskit::NodeId {
+    accesskit::NodeId(id.a11y_key())
+}
+
+/// Whether an AccessKit action request targets the given iced widget id.
+pub fn request_targets(request: &accesskit::ActionRequest, id: &Id) -> bool {
+    request.target_node == node_id(id)
+}
+
 static NEXT_WINDOW_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Allocates a window node key that cannot collide with widget keys for the
@@ -169,6 +179,22 @@ impl A11yTree {
             acc.children.extend(children);
             acc
         })
+    }
+
+    /// Prepends a transform to every root node in this tree.
+    ///
+    /// This is useful for transparent layout widgets, such as scroll views,
+    /// that move all of their accessible descendants together without
+    /// introducing an additional semantic node.
+    pub fn transform_roots(&mut self, transform: accesskit::Affine) {
+        for root in &mut self.root {
+            let current = root
+                .node()
+                .transform()
+                .copied()
+                .unwrap_or(accesskit::Affine::IDENTITY);
+            root.node_mut().set_transform(transform * current);
+        }
     }
 
     /// The root nodes of this tree.

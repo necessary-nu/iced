@@ -249,6 +249,8 @@ where
             tag: tree::Tag::of::<Tag<S>>(),
             state: tree::State::new(S::default()),
             children: vec![Tree::empty()],
+            #[cfg(feature = "a11y")]
+            a11y_id: crate::core::widget::Id::unique(),
         })));
 
         *self.tree.borrow_mut() = state.clone();

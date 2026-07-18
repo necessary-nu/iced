@@ -650,6 +650,56 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        #[cfg(feature = "a11y")]
+        if let Event::Accessibility(request) = event {
+            use crate::core::a11y::{
+                accesskit::{Action as A11yAction, ActionData},
+                request_targets,
+            };
+
+            let id = self.id.as_ref().unwrap_or_else(|| tree.a11y_id()).clone();
+            if request_targets(request, &id) {
+                if let Some(on_edit) = self.on_edit.as_ref() {
+                    let state = tree.state.downcast_mut::<State<Highlighter>>();
+
+                    match request.action {
+                        A11yAction::Focus => {
+                            state.focus = Some(Focus::now());
+                            shell.request_redraw();
+                            shell.capture_event();
+                        }
+                        A11yAction::Blur => {
+                            state.focus = None;
+                            shell.request_redraw();
+                            shell.capture_event();
+                        }
+                        A11yAction::SetValue => {
+                            if let Some(ActionData::Value(value)) = request.data.as_ref() {
+                                shell.publish(on_edit(Action::SelectAll));
+                                shell.publish(on_edit(Action::Edit(Edit::Paste(Arc::new(
+                                    value.to_string(),
+                                )))));
+                                shell.capture_event();
+                            }
+                        }
+                        A11yAction::ReplaceSelectedText => {
+                            if let Some(ActionData::Value(value)) = request.data.as_ref() {
+                                shell.publish(on_edit(Action::Edit(Edit::Paste(Arc::new(
+                                    value.to_string(),
+                                )))));
+                                shell.capture_event();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if shell.is_event_captured() {
+                    return;
+                }
+            }
+        }
+
         let Some(on_edit) = self.on_edit.as_ref() else {
             return;
         };
@@ -1030,6 +1080,49 @@ where
         let state = tree.state.downcast_mut::<State<Highlighter>>();
 
         operation.focusable(self.id.as_ref(), layout.bounds(), state);
+    }
+
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        state: &widget::Tree,
+        _cursor: mouse::Cursor,
+    ) -> crate::core::a11y::A11yTree {
+        use crate::core::a11y::{
+            A11yTree,
+            accesskit::{Action as A11yAction, Node, Role},
+        };
+
+        let mut node = Node::new(Role::MultilineTextInput);
+        node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
+
+        if self.on_edit.is_some() {
+            node.add_action(A11yAction::Focus);
+            node.add_action(A11yAction::Blur);
+            node.add_action(A11yAction::SetValue);
+            node.add_action(A11yAction::ReplaceSelectedText);
+        } else {
+            node.set_disabled();
+        }
+
+        let value = self.content.text();
+        if value.is_empty() {
+            if let Some(placeholder) = self.placeholder.as_deref() {
+                node.set_placeholder(placeholder.to_string());
+            }
+        } else {
+            node.set_value(value);
+        }
+
+        let id = self.id.as_ref().unwrap_or_else(|| state.a11y_id()).clone();
+
+        A11yTree::leaf(node, id)
+    }
+
+    #[cfg(feature = "a11y")]
+    fn id(&self) -> Option<widget::Id> {
+        self.id.clone()
     }
 }
 

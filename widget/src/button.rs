@@ -81,8 +81,7 @@ where
     clip: bool,
     class: Theme::Class<'a>,
     status: Option<Status>,
-    #[cfg(feature = "a11y")]
-    id: crate::core::widget::Id,
+    id: Option<crate::core::widget::Id>,
 }
 
 enum OnPress<'a, Message> {
@@ -117,9 +116,14 @@ where
             clip: false,
             class: Theme::default(),
             status: None,
-            #[cfg(feature = "a11y")]
-            id: crate::core::widget::Id::unique(),
+            id: None,
         }
+    }
+
+    /// Sets the [`Id`](crate::core::widget::Id) of the [`Button`].
+    pub fn id(mut self, id: impl Into<crate::core::widget::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Sets the width of the [`Button`].
@@ -286,6 +290,31 @@ where
             return;
         }
 
+        #[cfg(feature = "a11y")]
+        if let Event::Accessibility(request) = event {
+            use crate::core::a11y::{accesskit::Action, request_targets};
+
+            let id = self.id.as_ref().unwrap_or_else(|| tree.a11y_id());
+            if request_targets(request, id) {
+                match request.action {
+                    Action::Click => {
+                        if let Some(on_press) = &self.on_press {
+                            shell.publish(on_press.get());
+                            shell.capture_event();
+                        }
+                    }
+                    Action::Focus | Action::Blur if self.on_press.is_some() => {
+                        shell.capture_event();
+                    }
+                    _ => {}
+                }
+
+                if shell.is_event_captured() {
+                    return;
+                }
+            }
+        }
+
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. })
@@ -449,19 +478,22 @@ where
 
         let mut node = Node::new(Role::Button);
         node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
-        node.add_action(Action::Focus);
         if self.on_press.is_some() {
+            node.add_action(Action::Focus);
+            node.add_action(Action::Blur);
             node.add_action(Action::Click);
         } else {
             node.set_disabled();
         }
 
-        A11yTree::node_with_child_tree(A11yNode::new(node, self.id.clone()), child_tree)
+        let id = self.id.as_ref().unwrap_or_else(|| state.a11y_id()).clone();
+
+        A11yTree::node_with_child_tree(A11yNode::new(node, id), child_tree)
     }
 
     #[cfg(feature = "a11y")]
     fn id(&self) -> Option<crate::core::widget::Id> {
-        Some(self.id.clone())
+        self.id.clone()
     }
 }
 
