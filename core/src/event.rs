@@ -6,6 +6,9 @@ use crate::mouse;
 use crate::touch;
 use crate::window;
 
+#[cfg(feature = "a11y")]
+use crate::a11y::accesskit;
+
 /// A user interface event.
 ///
 /// _**Note:** This type is largely incomplete! If you need to track
@@ -31,6 +34,10 @@ pub enum Event {
 
     /// A clipboard event
     Clipboard(clipboard::Event),
+
+    /// An action requested by assistive technology through AccessKit.
+    #[cfg(feature = "a11y")]
+    Accessibility(accesskit::ActionRequest),
 
     /// A wake event, produced by a [`Waker`](crate::shell::Waker).
     Waken,

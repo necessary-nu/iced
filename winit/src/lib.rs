@@ -415,6 +415,7 @@ where
                                         },
                                         crate::a11y::ActionBridge {
                                             window: id,
+                                            raw: window.clone(),
                                             sender: self.a11y_sender.clone(),
                                         },
                                         crate::a11y::DeactivationBridge {
@@ -553,6 +554,11 @@ async fn run_instance<P>(
     let mut user_interfaces = ManuallyDrop::new(FxHashMap::default());
     #[cfg(feature = "a11y")]
     let mut a11y_windows: FxHashMap<window::Id, (crate::a11y::Adapter, u64)> = FxHashMap::default();
+    #[cfg(feature = "a11y")]
+    let mut a11y_actions: FxHashMap<
+        window::Id,
+        Vec<crate::core::a11y::accesskit::ActionRequest>,
+    > = FxHashMap::default();
     let mut clipboard = Clipboard::new();
 
     #[cfg(all(feature = "linux-theme-detection", target_os = "linux"))]
@@ -843,8 +849,27 @@ async fn run_instance<P>(
                             window.surface_version = window.state.surface_version();
                         }
 
+                        #[cfg(feature = "a11y")]
+                        while let Ok(event) = a11y_receiver.try_recv() {
+                            match event {
+                                A11yEvent::Action { window, request } => {
+                                    a11y_actions.entry(window).or_default().push(request);
+                                }
+                                A11yEvent::Enabled { .. } | A11yEvent::Disabled { .. } => {}
+                            }
+                        }
+
                         let redraw_event =
                             core::Event::Window(window::Event::RedrawRequested(Instant::now()));
+                        #[cfg(feature = "a11y")]
+                        let mut interaction_events = a11y_actions
+                            .remove(&id)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(core::Event::Accessibility)
+                            .collect::<Vec<_>>();
+                        #[cfg(feature = "a11y")]
+                        interaction_events.push(redraw_event.clone());
 
                         let cursor = window.state.cursor();
 
@@ -853,13 +878,24 @@ async fn run_instance<P>(
 
                         let interact_span = debug::interact(id);
                         let mut redraw_count = 0;
+                        #[cfg(feature = "a11y")]
+                        let mut first_interaction = true;
 
                         let state = loop {
                             let message_count = messages.len();
+                            #[cfg(feature = "a11y")]
+                            let current_events = if first_interaction {
+                                first_interaction = false;
+                                interaction_events.as_slice()
+                            } else {
+                                slice::from_ref(&redraw_event)
+                            };
+                            #[cfg(not(feature = "a11y"))]
+                            let current_events = slice::from_ref(&redraw_event);
                             let (state, _) = interface.update(
                                 &window.raw,
                                 &window.waker,
-                                slice::from_ref(&redraw_event),
+                                current_events,
                                 cursor,
                                 &mut window.renderer,
                                 &mut messages,
@@ -964,18 +1000,6 @@ async fn run_instance<P>(
 
                         #[cfg(feature = "a11y")]
                         {
-                            while let Ok(event) = a11y_receiver.try_recv() {
-                                match event {
-                                    A11yEvent::Action { window, request } => {
-                                        log::debug!(
-                                            "Unhandled accessibility action \
-                                            on {window:?}: {request:?}"
-                                        );
-                                    }
-                                    A11yEvent::Enabled { .. } | A11yEvent::Disabled { .. } => {}
-                                }
-                            }
-
                             if let Some((adapter, window_node)) = a11y_windows.get_mut(&id) {
                                 adapter.update_if_active(|| {
                                     use crate::core::a11y::accesskit::{

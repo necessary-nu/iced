@@ -102,6 +102,9 @@ impl ActivationHandler for ActivationBridge {
 pub struct ActionBridge {
     /// The window this adapter belongs to.
     pub window: window::Id,
+    /// The winit window, used to wake the event loop so the action is handled
+    /// promptly even when no visual event is pending.
+    pub raw: std::sync::Arc<winit::window::Window>,
     /// Where requests are forwarded.
     pub sender: mpsc::UnboundedSender<A11yEvent>,
 }
@@ -112,6 +115,7 @@ impl crate::core::a11y::accesskit::ActionHandler for ActionBridge {
             window: self.window,
             request,
         });
+        self.raw.request_redraw();
     }
 }
 
