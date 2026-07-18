@@ -122,17 +122,36 @@ where
     }
 
     /// Returns the accessibility tree of the user interface, harvested from
-    /// the root widget after layout.
+    /// the root widget and every active overlay after layout.
     #[cfg(feature = "a11y")]
     pub fn a11y_nodes(
-        &self,
+        &mut self,
         cursor: mouse::Cursor,
+        renderer: &Renderer,
     ) -> crate::core::a11y::A11yTree {
-        self.root.as_widget().a11y_nodes(
-            Layout::new(&self.base),
-            &self.state,
-            cursor,
-        )
+        let base = self
+            .root
+            .as_widget()
+            .a11y_nodes(Layout::new(&self.base), &self.state, cursor);
+        let viewport = Rectangle::with_size(self.bounds);
+        let Some(mut overlay) = self
+            .root
+            .as_widget_mut()
+            .overlay(
+                &mut self.state,
+                Layout::new(&self.base),
+                renderer,
+                &viewport,
+                Vector::ZERO,
+            )
+            .map(overlay::Nested::new)
+        else {
+            return base;
+        };
+        let layout = overlay.layout(renderer, self.bounds);
+        let overlay = overlay.a11y_nodes(Layout::new(&layout), cursor, renderer);
+
+        crate::core::a11y::A11yTree::join([base, overlay].into_iter())
     }
 
     /// Updates the [`UserInterface`] by processing each provided [`Event`].
@@ -670,6 +689,158 @@ impl State {
             State::Updated {
                 has_layout_changed, ..
             } => *has_layout_changed,
+        }
+    }
+}
+
+#[cfg(all(test, feature = "a11y"))]
+mod tests {
+    use super::{Cache, UserInterface};
+    use crate::core::a11y::accesskit::{Node, Role};
+    use crate::core::a11y::{A11yId, A11yTree};
+    use crate::core::layout::{self, Layout};
+    use crate::core::mouse;
+    use crate::core::overlay;
+    use crate::core::renderer;
+    use crate::core::widget::{self, Widget};
+    use crate::core::{Length, Rectangle, Size, Vector};
+
+    struct AccessibleOverlay {
+        id: widget::Id,
+        nested: Option<widget::Id>,
+    }
+
+    impl overlay::Overlay<(), (), ()> for AccessibleOverlay {
+        fn layout(&mut self, _renderer: &(), bounds: Size) -> layout::Node {
+            layout::Node::new(bounds)
+        }
+
+        fn draw(
+            &self,
+            _renderer: &mut (),
+            _theme: &(),
+            _style: &renderer::Style,
+            _layout: Layout<'_>,
+            _cursor: mouse::Cursor,
+        ) {
+        }
+
+        fn a11y_nodes(
+            &self,
+            _layout: Layout<'_>,
+            _cursor: mouse::Cursor,
+            _renderer: &(),
+        ) -> A11yTree {
+            let mut node = Node::new(Role::Dialog);
+            node.set_label("Overlay");
+            A11yTree::leaf(node, self.id.clone())
+        }
+
+        fn overlay<'a>(
+            &'a mut self,
+            _layout: Layout<'a>,
+            _renderer: &(),
+        ) -> Option<overlay::Element<'a, (), (), ()>> {
+            self.nested.as_ref().map(|id| {
+                overlay::Element::new(Box::new(AccessibleOverlay {
+                    id: id.clone(),
+                    nested: None,
+                }))
+            })
+        }
+    }
+
+    struct WidgetWithOverlays {
+        id: widget::Id,
+        first_overlay: widget::Id,
+        second_overlay: widget::Id,
+        nested_overlay: widget::Id,
+    }
+
+    impl Widget<(), (), ()> for WidgetWithOverlays {
+        fn size(&self) -> Size<Length> {
+            Size::new(Length::Fill, Length::Fill)
+        }
+
+        fn layout(
+            &mut self,
+            _tree: &mut widget::Tree,
+            _renderer: &(),
+            limits: &layout::Limits,
+        ) -> layout::Node {
+            layout::Node::new(limits.max())
+        }
+
+        fn draw(
+            &self,
+            _tree: &widget::Tree,
+            _renderer: &mut (),
+            _theme: &(),
+            _style: &renderer::Style,
+            _layout: Layout<'_>,
+            _cursor: mouse::Cursor,
+            _viewport: &Rectangle,
+        ) {
+        }
+
+        fn overlay<'a>(
+            &'a mut self,
+            _tree: &'a mut widget::Tree,
+            _layout: Layout<'a>,
+            _renderer: &(),
+            _viewport: &Rectangle,
+            _translation: Vector,
+        ) -> Option<overlay::Element<'a, (), (), ()>> {
+            Some(
+                overlay::Group::with_children(vec![
+                    overlay::Element::new(Box::new(AccessibleOverlay {
+                        id: self.first_overlay.clone(),
+                        nested: Some(self.nested_overlay.clone()),
+                    })),
+                    overlay::Element::new(Box::new(AccessibleOverlay {
+                        id: self.second_overlay.clone(),
+                        nested: None,
+                    })),
+                ])
+                .overlay(),
+            )
+        }
+
+        fn a11y_nodes(
+            &self,
+            _layout: Layout<'_>,
+            _state: &widget::Tree,
+            _cursor: mouse::Cursor,
+        ) -> A11yTree {
+            let mut node = Node::new(Role::Group);
+            node.set_label("Base");
+            A11yTree::leaf(node, self.id.clone())
+        }
+    }
+
+    #[test]
+    fn accessibility_tree_contains_grouped_and_nested_overlays() {
+        let base = widget::Id::new("base");
+        let first_overlay = widget::Id::new("first-overlay");
+        let second_overlay = widget::Id::new("second-overlay");
+        let nested_overlay = widget::Id::new("nested-overlay");
+        let mut renderer = ();
+        let mut interface = UserInterface::build(
+            crate::core::Element::<(), (), ()>::new(WidgetWithOverlays {
+                id: base.clone(),
+                first_overlay: first_overlay.clone(),
+                second_overlay: second_overlay.clone(),
+                nested_overlay: nested_overlay.clone(),
+            }),
+            Size::new(100.0, 100.0),
+            Cache::new(),
+            &mut renderer,
+        );
+
+        let tree = interface.a11y_nodes(mouse::Cursor::Unavailable, &renderer);
+
+        for id in [base, first_overlay, second_overlay, nested_overlay] {
+            assert!(tree.contains(&A11yId::from(id)));
         }
     }
 }

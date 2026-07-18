@@ -71,6 +71,17 @@ where
         mouse::Interaction::None
     }
 
+    /// Returns the accessibility nodes of the [`Overlay`] and its children.
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        _layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _renderer: &Renderer,
+    ) -> crate::a11y::A11yTree {
+        crate::a11y::A11yTree::default()
+    }
+
     /// Returns the nested overlay of the [`Overlay`], if there is any.
     fn overlay<'a>(
         &'a mut self,

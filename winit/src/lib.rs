@@ -46,11 +46,13 @@ use crate::core::renderer;
 use crate::core::theme;
 use crate::core::time::Instant;
 use crate::core::widget::operation;
-use crate::core::{Point, Renderer, Size};
+use crate::core::{Point, Size};
 use crate::futures::futures::channel::mpsc;
 
 #[cfg(feature = "a11y")]
 use crate::a11y::A11yEvent;
+#[cfg(feature = "hinting")]
+use crate::core::Renderer as _;
 use crate::futures::futures::channel::oneshot;
 use crate::futures::futures::task;
 use crate::futures::futures::{Future, StreamExt};
@@ -399,35 +401,27 @@ where
 
                                 #[cfg(feature = "a11y")]
                                 let (adapter, window_node) = {
-                                    let window_node =
-                                        core::a11y::window_node_id();
+                                    let window_node = core::a11y::window_node_id();
 
-                                    let adapter =
-                                        accesskit_winit::Adapter::with_direct_handlers(
-                                            event_loop,
-                                            &window,
-                                            crate::a11y::ActivationBridge {
-                                                window: id,
-                                                window_node,
-                                                title: window.title(),
-                                                raw: window.clone(),
-                                                sender: self
-                                                    .a11y_sender
-                                                    .clone(),
-                                            },
-                                            crate::a11y::ActionBridge {
-                                                window: id,
-                                                sender: self
-                                                    .a11y_sender
-                                                    .clone(),
-                                            },
-                                            crate::a11y::DeactivationBridge {
-                                                window: id,
-                                                sender: self
-                                                    .a11y_sender
-                                                    .clone(),
-                                            },
-                                        );
+                                    let adapter = accesskit_winit::Adapter::with_direct_handlers(
+                                        event_loop,
+                                        &window,
+                                        crate::a11y::ActivationBridge {
+                                            window: id,
+                                            window_node,
+                                            title: window.title(),
+                                            raw: window.clone(),
+                                            sender: self.a11y_sender.clone(),
+                                        },
+                                        crate::a11y::ActionBridge {
+                                            window: id,
+                                            sender: self.a11y_sender.clone(),
+                                        },
+                                        crate::a11y::DeactivationBridge {
+                                            window: id,
+                                            sender: self.a11y_sender.clone(),
+                                        },
+                                    );
 
                                     (crate::a11y::Adapter(Box::new(adapter)), window_node)
                                 };
@@ -533,9 +527,7 @@ async fn run_instance<P>(
     mut proxy: Proxy<P::Message>,
     mut event_receiver: mpsc::UnboundedReceiver<Event<Action<P::Message>>>,
     mut control_sender: mpsc::UnboundedSender<Control>,
-    #[cfg(feature = "a11y")] mut a11y_receiver: mpsc::UnboundedReceiver<
-        A11yEvent,
-    >,
+    #[cfg(feature = "a11y")] mut a11y_receiver: mpsc::UnboundedReceiver<A11yEvent>,
     display_handle: winit::event_loop::OwnedDisplayHandle,
     is_daemon: bool,
     backend_settings: backend::Settings,
@@ -560,10 +552,7 @@ async fn run_instance<P>(
     let mut ui_caches = FxHashMap::default();
     let mut user_interfaces = ManuallyDrop::new(FxHashMap::default());
     #[cfg(feature = "a11y")]
-    let mut a11y_windows: FxHashMap<
-        window::Id,
-        (crate::a11y::Adapter, u64),
-    > = FxHashMap::default();
+    let mut a11y_windows: FxHashMap<window::Id, (crate::a11y::Adapter, u64)> = FxHashMap::default();
     let mut clipboard = Clipboard::new();
 
     #[cfg(all(feature = "linux-theme-detection", target_os = "linux"))]
@@ -975,8 +964,7 @@ async fn run_instance<P>(
 
                         #[cfg(feature = "a11y")]
                         {
-                            while let Ok(event) = a11y_receiver.try_recv()
-                            {
+                            while let Ok(event) = a11y_receiver.try_recv() {
                                 match event {
                                     A11yEvent::Action { window, request } => {
                                         log::debug!(
@@ -984,37 +972,25 @@ async fn run_instance<P>(
                                             on {window:?}: {request:?}"
                                         );
                                     }
-                                    A11yEvent::Enabled { .. }
-                                    | A11yEvent::Disabled { .. } => {}
+                                    A11yEvent::Enabled { .. } | A11yEvent::Disabled { .. } => {}
                                 }
                             }
 
-                            if let Some((adapter, window_node)) =
-                                a11y_windows.get_mut(&id)
-                            {
+                            if let Some((adapter, window_node)) = a11y_windows.get_mut(&id) {
                                 adapter.update_if_active(|| {
                                     use crate::core::a11y::accesskit::{
-                                        Node, NodeId, Role, Tree, TreeId,
-                                        TreeUpdate,
+                                        Node, NodeId, Role, Tree, TreeId, TreeUpdate,
                                     };
-                                    use crate::core::a11y::{
-                                        A11yNode, A11yTree,
-                                    };
+                                    use crate::core::a11y::{A11yNode, A11yTree};
 
-                                    let child_tree =
-                                        interface.a11y_nodes(cursor);
+                                    let child_tree = interface.a11y_nodes(cursor, &window.renderer);
 
-                                    let mut window_root =
-                                        Node::new(Role::Window);
-                                    window_root
-                                        .set_label(window.raw.title());
+                                    let mut window_root = Node::new(Role::Window);
+                                    window_root.set_label(window.raw.title());
 
                                     let root = NodeId(*window_node);
                                     let tree = A11yTree::node_with_child_tree(
-                                        A11yNode::new(
-                                            window_root,
-                                            *window_node,
-                                        ),
+                                        A11yNode::new(window_root, *window_node),
                                         child_tree,
                                     );
 
@@ -1140,8 +1116,7 @@ async fn run_instance<P>(
                         };
 
                         #[cfg(feature = "a11y")]
-                        if let Some((adapter, _)) = a11y_windows.get_mut(&id)
-                        {
+                        if let Some((adapter, _)) = a11y_windows.get_mut(&id) {
                             adapter.process_event(&window.raw, &window_event);
                         }
 

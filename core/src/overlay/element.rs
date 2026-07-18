@@ -101,6 +101,16 @@ where
         self.content.mouse_interaction(layout, cursor, renderer)
     }
 
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &Renderer,
+    ) -> crate::a11y::A11yTree {
+        self.content.a11y_nodes(layout, cursor, renderer)
+    }
+
     fn draw(
         &self,
         renderer: &mut Renderer,

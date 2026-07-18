@@ -442,11 +442,10 @@ where
         };
 
         let child_layout = layout.children().next().unwrap();
-        let child_tree = self.content.as_widget().a11y_nodes(
-            child_layout,
-            &state.children[0],
-            cursor,
-        );
+        let child_tree =
+            self.content
+                .as_widget()
+                .a11y_nodes(child_layout, &state.children[0], cursor);
 
         let mut node = Node::new(Role::Button);
         node.set_bounds(crate::core::a11y::bounds(layout.bounds()));
@@ -457,10 +456,7 @@ where
             node.set_disabled();
         }
 
-        A11yTree::node_with_child_tree(
-            A11yNode::new(node, self.id.clone()),
-            child_tree,
-        )
+        A11yTree::node_with_child_tree(A11yNode::new(node, self.id.clone()), child_tree)
     }
 
     #[cfg(feature = "a11y")]

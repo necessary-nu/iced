@@ -118,6 +118,21 @@ where
             .unwrap_or_default()
     }
 
+    #[cfg(feature = "a11y")]
+    fn a11y_nodes(
+        &self,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &Renderer,
+    ) -> crate::a11y::A11yTree {
+        crate::a11y::A11yTree::join(
+            self.children
+                .iter()
+                .zip(layout.children())
+                .map(|(child, layout)| child.as_overlay().a11y_nodes(layout, cursor, renderer)),
+        )
+    }
+
     fn operate(
         &mut self,
         layout: Layout<'_>,

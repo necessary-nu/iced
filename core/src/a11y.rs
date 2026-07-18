@@ -151,9 +151,7 @@ impl A11yTree {
 
     /// A tree with a single root node adopting the given child tree.
     pub fn node_with_child_tree(mut root: A11yNode, child_tree: Self) -> Self {
-        root.add_children(
-            child_tree.root.iter().map(A11yNode::id).cloned().collect(),
-        );
+        root.add_children(child_tree.root.iter().map(A11yNode::id).cloned().collect());
         Self {
             root: vec![root],
             children: child_tree
@@ -195,8 +193,7 @@ impl A11yTree {
 
     /// Whether the tree contains a node with the given identity.
     pub fn contains(&self, id: &A11yId) -> bool {
-        self.root.iter().any(|n| n.id() == id)
-            || self.children.iter().any(|n| n.id() == id)
+        self.root.iter().any(|n| n.id() == id) || self.children.iter().any(|n| n.id() == id)
     }
 }
 

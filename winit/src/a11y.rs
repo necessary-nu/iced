@@ -5,8 +5,8 @@
 //! `run_instance`, which owns the user interfaces the accessibility trees
 //! are harvested from.
 use crate::core::a11y::accesskit::{
-    ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId, Role,
-    Tree, TreeId, TreeUpdate,
+    ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId, Role, Tree, TreeId,
+    TreeUpdate,
 };
 use crate::core::window;
 use crate::futures::futures::channel::mpsc;

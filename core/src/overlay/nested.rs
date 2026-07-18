@@ -114,6 +114,42 @@ where
         recurse(&mut self.overlay, layout, renderer, theme, style, cursor);
     }
 
+    /// Returns the accessibility tree of this overlay and all nested overlays.
+    #[cfg(feature = "a11y")]
+    pub fn a11y_nodes(
+        &mut self,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        renderer: &Renderer,
+    ) -> crate::a11y::A11yTree {
+        fn recurse<Message, Theme, Renderer>(
+            element: &mut overlay::Element<'_, Message, Theme, Renderer>,
+            layout: Layout<'_>,
+            cursor: mouse::Cursor,
+            renderer: &Renderer,
+        ) -> crate::a11y::A11yTree
+        where
+            Renderer: renderer::Renderer,
+        {
+            let mut layouts = layout.children();
+            let Some(layout) = layouts.next() else {
+                return crate::a11y::A11yTree::default();
+            };
+            let nested_layout = layouts.next();
+            let overlay = element.as_overlay_mut();
+            let current = overlay.a11y_nodes(layout, cursor, renderer);
+            let nested = overlay
+                .overlay(layout, renderer)
+                .zip(nested_layout)
+                .map(|(mut overlay, layout)| recurse(&mut overlay, layout, cursor, renderer))
+                .unwrap_or_default();
+
+            crate::a11y::A11yTree::join([current, nested].into_iter())
+        }
+
+        recurse(&mut self.overlay, layout, cursor, renderer)
+    }
+
     /// Applies a [`widget::Operation`] to the [`Nested`] overlay.
     pub fn operate(
         &mut self,

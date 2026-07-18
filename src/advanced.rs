@@ -12,9 +12,9 @@ pub mod widget {
     pub use crate::runtime::task::widget as operate;
 }
 
+pub use crate::core::Shell;
 #[cfg(feature = "a11y")]
 pub use crate::core::a11y;
-pub use crate::core::Shell;
 pub use crate::core::clipboard;
 pub use crate::core::image;
 pub use crate::core::input_method::{self, InputMethod};

@@ -1349,7 +1349,9 @@ where
 
         A11yTree::leaf(
             node,
-            self.id.clone().unwrap_or_else(crate::core::widget::Id::unique),
+            self.id
+                .clone()
+                .unwrap_or_else(crate::core::widget::Id::unique),
         )
     }
 

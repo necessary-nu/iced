@@ -375,11 +375,9 @@ where
         state: &Tree,
         cursor: mouse::Cursor,
     ) -> crate::core::a11y::A11yTree {
-        self.content.as_widget().a11y_nodes(
-            layout.children().next().unwrap(),
-            state,
-            cursor,
-        )
+        self.content
+            .as_widget()
+            .a11y_nodes(layout.children().next().unwrap(), state, cursor)
     }
 }
 
